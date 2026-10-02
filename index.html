@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Tesla YouTube</title>
+<style>
+  :root {
+    --bg:#07090d; --panel:rgba(20,24,32,.88); --panel2:rgba(255,255,255,.06);
+    --text:#f5f7fb; --muted:#9aa4b2; --accent:#e82127; --line:rgba(255,255,255,.10);
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; min-height:100vh; color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    background:
+      radial-gradient(circle at 15% 0%, rgba(232,33,39,.18), transparent 30%),
+      radial-gradient(circle at 85% 10%, rgba(80,110,255,.12), transparent 28%),
+      var(--bg);
+  }
+  header {
+    position:sticky; top:0; z-index:10; backdrop-filter:blur(18px);
+    background:rgba(7,9,13,.78); border-bottom:1px solid var(--line);
+    padding:16px clamp(14px,3vw,34px);
+  }
+  .bar { max-width:1200px; margin:auto; display:flex; gap:14px; align-items:center; }
+  .logo { font-weight:800; font-size:20px; white-space:nowrap; }
+  .logo span { color:var(--accent); }
+  .search { flex:1; display:flex; gap:8px; }
+  input {
+    width:100%; min-height:48px; border:1px solid var(--line); outline:none;
+    border-radius:15px; background:var(--panel2); color:var(--text);
+    padding:0 16px; font-size:16px;
+  }
+  input:focus { border-color:rgba(232,33,39,.65); }
+  button {
+    border:0; color:white; background:var(--accent); border-radius:14px;
+    padding:0 18px; min-height:48px; font-size:15px; font-weight:700; cursor:pointer;
+  }
+  button:active { transform:scale(.98); }
+  main { max-width:1200px; margin:auto; padding:22px clamp(14px,3vw,34px) 50px; }
+  .chips { display:flex; gap:9px; overflow:auto; padding:3px 0 18px; scrollbar-width:none; }
+  .chips::-webkit-scrollbar { display:none; }
+  .chip { flex:0 0 auto; min-height:40px; padding:0 15px; border-radius:999px;
+    background:var(--panel2); border:1px solid var(--line); color:#dce2eb; }
+  .chip.active { background:rgba(232,33,39,.18); border-color:rgba(232,33,39,.5); }
+  .status { color:var(--muted); margin:4px 0 18px; font-size:14px; min-height:20px; }
+  .playerWrap { display:none; margin-bottom:24px; }
+  .player {
+    position:relative; width:100%; aspect-ratio:16/9; border-radius:18px;
+    overflow:hidden; background:#000; border:1px solid var(--line);
+    box-shadow:0 18px 60px rgba(0,0,0,.35);
+  }
+  iframe { width:100%; height:100%; border:0; }
+  .now { padding:11px 2px 0; font-weight:700; }
+  .grid {
+    display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:16px;
+  }
+  .card {
+    overflow:hidden; border:1px solid var(--line); border-radius:17px;
+    background:var(--panel); cursor:pointer; transition:.18s ease;
+  }
+  .card:hover { transform:translateY(-2px); border-color:rgba(255,255,255,.2); }
+  .thumb { width:100%; aspect-ratio:16/9; object-fit:cover; display:block; background:#111; }
+  .info { padding:12px 13px 14px; }
+  .title { font-size:15px; line-height:1.35; font-weight:700; }
+  .channel { color:var(--muted); font-size:13px; margin-top:7px; }
+  .empty {
+    text-align:center; color:var(--muted); padding:55px 15px;
+    border:1px dashed var(--line); border-radius:18px;
+  }
+  .tiny { color:#697384; font-size:12px; margin-top:10px; line-height:1.45; }
+  @media(max-width:650px) {
+    .bar { flex-wrap:wrap; }
+    .logo { width:100%; }
+    .search { width:100%; }
+    .grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:11px; }
+    .info { padding:9px 10px 11px; }
+    .title { font-size:13px; }
+    .channel { font-size:11px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="logo"><span>▶</span> Tesla YouTube</div>
+    <div class="search">
+      <input id="q" type="search" placeholder="Search YouTube..." autocomplete="off">
+      <button id="searchBtn">Search</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="chips">
+    <button class="chip" data-q="music">Music</button>
+    <button class="chip" data-q="podcasts">Podcasts</button>
+    <button class="chip" data-q="comedy">Comedy</button>
+    <button class="chip" data-q="gaming">Gaming</button>
+    <button class="chip" data-q="news">News</button>
+  </div>
+
+  <div id="status" class="status">Search for a video to get started.</div>
+
+  <section id="playerWrap" class="playerWrap">
+    <div class="player">
+      <iframe id="player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
+    </div>
+    <div id="now" class="now"></div>
+  </section>
+
+  <section id="results" class="grid"></section>
+</main>
+
+<script>
+const q = document.getElementById('q');
+const results = document.getElementById('results');
+const statusEl = document.getElementById('status');
+const playerWrap = document.getElementById('playerWrap');
+const player = document.getElementById('player');
+const now = document.getElementById('now');
+
+let lastSearch = '';
+let instanceIndex = 0;
+
+/*
+  These are public Invidious API instances. They provide YouTube search
+  without requiring a Google API key. Public instances can occasionally
+  be unavailable, so the app automatically tries another one.
+*/
+const instances = [
+  'https://inv.nadeko.net',
+  'https://yewtu.be',
+  'https://invidious.nerdvpn.de',
+  'https://invidious.privacyredirect.com'
+];
+
+async function searchYouTube(term) {
+  const encoded = encodeURIComponent(term);
+  let lastError = null;
+
+  for (let i = 0; i < instances.length; i++) {
+    const base = instances[(instanceIndex + i) % instances.length];
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 7000);
+      const url = `${base}/api/v1/search?q=${encoded}&type=video&page=1`;
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'Accept': 'application/json' }
+      });
+      clearTimeout(timer);
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      const videos = Array.isArray(data) ? data.filter(x => x.type === 'video') : [];
+      if (!videos.length) throw new Error('No video results');
+
+      instanceIndex = (instanceIndex + i) % instances.length;
+      return videos.slice(0, 18);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error('Search unavailable');
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
+  }[c]));
+}
+
+function render(videos) {
+  results.innerHTML = '';
+  videos.forEach(v => {
+    const id = v.videoId;
+    const title = v.title || 'YouTube video';
+    const channel = v.author || '';
+    const thumb = v.videoThumbnails?.find(t => t.quality === 'medium')?.url
+      || v.videoThumbnails?.[0]?.url
+      || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+
+    const card = document.createElement('article');
+    card.className = 'card';
+    card.innerHTML = `
+      <img class="thumb" loading="lazy" src="${escapeHtml(thumb)}" alt="">
+      <div class="info">
+        <div class="title">${escapeHtml(title)}</div>
+        <div class="channel">${escapeHtml(channel)}</div>
+      </div>`;
+    card.addEventListener('click', () => play(id, title));
+    results.appendChild(card);
+  });
+}
+
+function play(id, title) {
+  player.src = `https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=1&rel=0&playsinline=1`;
+  now.textContent = title;
+  playerWrap.style.display = 'block';
+  playerWrap.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+async function doSearch(term) {
+  term = term.trim();
+  if (!term) return;
+
+  lastSearch = term;
+  statusEl.textContent = `Searching YouTube for “${term}”…`;
+  results.innerHTML = '';
+  playerWrap.style.display = 'none';
+
+  try {
+    const videos = await searchYouTube(term);
+    render(videos);
+    statusEl.textContent = `${videos.length} results for “${term}”`;
+  } catch (err) {
+    statusEl.textContent = 'Search is temporarily unavailable. Please try again in a moment.';
+    results.innerHTML = `
+      <div class="empty">
+        <strong>Couldn’t load YouTube search results.</strong>
+        <div class="tiny">The free public search service may be temporarily unavailable. Tap Search again to retry.</div>
+      </div>`;
+  }
+}
+
+document.getElementById('searchBtn').addEventListener('click', () => doSearch(q.value));
+q.addEventListener('keydown', e => {
+  if (e.key === 'Enter') doSearch(q.value);
+});
+
+document.querySelectorAll('.chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    q.value = chip.dataset.q;
+    doSearch(chip.dataset.q);
+  });
+});
+</script>
+</body>
+</html>
